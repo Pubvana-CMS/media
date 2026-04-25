@@ -1,0 +1,23 @@
+{
+    "name": "pubvana/media",
+    "description": "Media management module for Pubvana — images, video, embeds",
+    "type": "flightphp-plugin",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "pubvana",
+            "email": ""
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "enlivenapp/flight-school": "^0.2",
+        "enlivenapp/flight-shield": "^0.1",
+        "pubvana/admin": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Pubvana\\Media\\": "src/"
+        }
+    }
+}
