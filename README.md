@@ -4,7 +4,7 @@
 
 # Pubvana Media
 
-Media management module for [Pubvana](https://pubvana.com) — images, video, and embeds. Built as a [Flight School](https://github.com/enlivenapp/flight-school) plugin with the headless service pattern.
+Media management module for [Pubvana](https://pubvanacms.com) — images, video, and embeds. Built as a [Flight School](https://github.com/enlivenapp/flight-school) plugin with the headless service pattern.
 
 ## Features
 
@@ -12,17 +12,23 @@ Media management module for [Pubvana](https://pubvana.com) — images, video, an
 - Video uploads with optional ffmpeg poster extraction
 - Embed storage (YouTube, Vimeo)
 - Imagick or GD — auto-detects the best available processor
-- Reusable media picker widget for any admin form
+- Reusable media picker widget for any form
 - Headless service on `$app->media()` — usable from any controller or plugin
+- Registers an `adext` menu contribution when admin is present
 
 ## Requirements
 
 - PHP 8.1+
-- `enlivenapp/flight-school` ^0.2
-- `enlivenapp/flight-shield` ^0.1
-- `pubvana/admin`
+- `enlivenapp/flight-school`
+- `enlivenapp/flight-shield`
+- `enlivenapp/migrations`
+- `flightphp/active-record`
 - Imagick or GD extension
 - ffmpeg *(optional, for video poster extraction)*
+
+## Recommends
+
+- `pubvana/admin` (The head for Pubvana headless)
 
 ## Installation
 
@@ -41,7 +47,7 @@ Enable in `app/config/config.php`:
 ],
 ```
 
-The migration creates the `media` table automatically on first load.
+Migrations package creates the `media` table automatically on first load.
 
 ## Configuration
 
@@ -60,8 +66,6 @@ Defaults from `Config.php` — override in your plugin config block:
 | `medium_width` | `768` | Medium resize width (proportional) |
 
 ## Usage
-
-### Headless service
 
 ```php
 $media = Flight::media();
@@ -87,7 +91,7 @@ $media->delete(5); // removes DB record + all files
 
 ### Picker widget
 
-Embed the media picker in any admin form:
+Embed the media picker in any form:
 
 ```php
 <?= Flight::media()->picker('avatar', $profile->avatar ?? '') ?>
@@ -105,10 +109,6 @@ uploads/2026/04/
     medium/abc123.webp  # 768px wide, proportional
     thumbs/abc123.webp  # 300x200, cropped
 ```
-
-## Admin
-
-The module registers a **Media** item in the admin content menu. The admin page provides a grid view for browsing, uploading, and managing media files.
 
 ## License
 
