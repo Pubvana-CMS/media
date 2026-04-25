@@ -14,7 +14,7 @@
         "enlivenapp/flight-school": "^0.2",
         "enlivenapp/flight-shield": "^0.1",
         "enlivenapp/migrations": "^0.1",
-        "flightphp/active-record": "^0.5"
+        "flightphp/active-record": "^0.7"
     },
     "suggest": {
         "pubvana/admin": "Admin UI for media library and upload management"
