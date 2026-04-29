@@ -63,4 +63,12 @@ class ImagickProcessor implements ImageProcessorInterface
 
         return $info;
     }
+
+    public function stripExif(string $path): void
+    {
+        $img = new \Imagick($path);
+        $img->stripImage();
+        $img->writeImage($path);
+        $img->clear();
+    }
 }

@@ -111,4 +111,37 @@ class GdProcessor implements ImageProcessorInterface
             'mime'   => $info['mime'],
         ];
     }
+
+    public function stripExif(string $path): void
+    {
+        $info = getimagesize($path);
+        if ($info === false) {
+            return;
+        }
+
+        $image = match ($info['mime']) {
+            'image/jpeg' => imagecreatefromjpeg($path),
+            'image/png'  => imagecreatefrompng($path),
+            'image/gif'  => imagecreatefromgif($path),
+            'image/webp' => imagecreatefromwebp($path),
+            default      => null,
+        };
+
+        if ($image === null) {
+            return;
+        }
+
+        imagealphablending($image, true);
+        imagesavealpha($image, true);
+
+        match ($info['mime']) {
+            'image/jpeg' => imagejpeg($image, $path, 95),
+            'image/png'  => imagepng($image, $path),
+            'image/gif'  => imagegif($image, $path),
+            'image/webp' => imagewebp($image, $path, 95),
+            default      => null,
+        };
+
+        imagedestroy($image);
+    }
 }

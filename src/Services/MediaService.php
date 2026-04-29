@@ -69,10 +69,11 @@ class MediaService
         $this->ensureDirectory($absDir . '/medium');
         $this->ensureDirectory($absDir . '/thumbs');
 
-        // Store original as-is
+        // Store original and strip EXIF metadata
         $originalName = $hex . '.' . $ext;
         $originalRel  = $relDir . '/' . $originalName;
         move_uploaded_file($file['tmp_name'], $absDir . '/' . $originalName);
+        $this->processor->stripExif($absDir . '/' . $originalName);
 
         // Generate medium (768px wide, proportional) as WebP
         $mediumName = $hex . '.webp';
@@ -323,6 +324,34 @@ class MediaService
     }
 
     /**
+     * Render Jodit editor init with media integration.
+     *
+     * Returns HTML + JS that initialises Jodit on the given selector with:
+     * - A custom "Media Library" toolbar button (browse + upload images/videos)
+     * - Drag/drop image upload routed through the media package
+     * - Jodit's built-in video button left intact for YouTube/Vimeo embeds
+     *
+     * @param string $selector CSS selector for the textarea (e.g. '#content')
+     * @param array  $options  Override default Jodit config (height, buttons)
+     * @return string Rendered HTML
+     */
+    public function joditInit(string $selector, array $options = []): string
+    {
+        static $counter = 0;
+        $joditId = 'jodit-media-' . (++$counter);
+
+        $defaults = [
+            'height'  => 500,
+            'buttons' => 'bold,italic,underline,strikethrough,|,ul,ol,|,outdent,indent,|,font,fontsize,brush,paragraph,|,image,video,table,link,|,align,undo,redo,|,hr,symbol,fullsize,source',
+        ];
+        $config = array_merge($defaults, $options);
+
+        ob_start();
+        include __DIR__ . '/../Views/media/jodit.php';
+        return ob_get_clean();
+    }
+
+    /**
      * Validate an uploaded file against size and extension rules.
      *
      * @param array  $file $_FILES entry
@@ -346,6 +375,18 @@ class MediaService
         if ($file['size'] > ($this->config[$maxKey] ?? 0)) {
             $maxMb = round(($this->config[$maxKey] ?? 0) / 1024 / 1024);
             throw new \RuntimeException("File exceeds maximum size of {$maxMb} MB.");
+        }
+
+        // Verify actual file content matches allowed MIME types
+        $finfo     = new \finfo(FILEINFO_MIME_TYPE);
+        $actualMime = $finfo->file($file['tmp_name']);
+
+        $allowedMimes = ($kind === 'image')
+            ? ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            : ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'application/mp4'];
+
+        if (!in_array($actualMime, $allowedMimes, true)) {
+            throw new \RuntimeException('File content does not match an allowed type.');
         }
     }
 

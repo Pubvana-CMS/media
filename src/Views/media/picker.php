@@ -42,6 +42,11 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
     </div>
     <div class="offcanvas-body">
+        <div id="<?= $pickerId ?>-upload-zone" class="border border-dashed rounded p-3 text-center mb-3" style="cursor:pointer;">
+            <i class="ti ti-cloud-upload" style="font-size:1.5rem;"></i>
+            <p class="mb-0 mt-1 small">Drop image or click to upload</p>
+            <input type="file" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp">
+        </div>
         <div class="row row-cols-3 g-2" id="<?= $pickerId ?>-grid">
             <div class="text-center text-secondary py-4 w-100">Loading...</div>
         </div>
@@ -63,6 +68,46 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
     let page = 1;
     let total = 0;
     let loaded = false;
+
+    // Upload zone
+    const uploadZone = document.getElementById('<?= $pickerId ?>-upload-zone');
+    const uploadInput = uploadZone.querySelector('input[type="file"]');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    uploadZone.addEventListener('click', (e) => {
+        if (e.target.closest('input')) return;
+        uploadInput.click();
+    });
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('border-primary');
+    });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('border-primary'));
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('border-primary');
+        if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+    });
+    uploadInput.addEventListener('change', () => {
+        if (uploadInput.files.length) uploadFile(uploadInput.files[0]);
+        uploadInput.value = '';
+    });
+
+    function uploadFile(file) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('_csrf_token', csrfToken);
+
+        fetch('/admin/media/upload/image', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { alert(data.error); return; }
+                page = 1;
+                loaded = true;
+                loadImages(1);
+            })
+            .catch(() => alert('Upload failed.'));
+    }
 
     function loadImages(pg) {
         fetch('/admin/media/json?type=image&page=' + pg)

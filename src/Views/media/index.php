@@ -42,10 +42,6 @@
                 <a class="nav-link <?= $typeFilter === 'video' ? 'active' : '' ?>"
                    href="/admin/media?type=video">Videos</a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link <?= $typeFilter === 'embed' ? 'active' : '' ?>"
-                   href="/admin/media?type=embed">Embeds</a>
-            </li>
         </ul>
     </div>
     <div class="card-body">

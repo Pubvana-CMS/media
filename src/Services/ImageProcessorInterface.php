@@ -32,4 +32,9 @@ interface ImageProcessorInterface
      * @return array{width: int, height: int, mime: string}
      */
     public function getInfo(string $path): array;
+
+    /**
+     * Strip EXIF and other metadata from an image file in place.
+     */
+    public function stripExif(string $path): void;
 }
