@@ -8,9 +8,13 @@
  * Routes:
  *   GET    /admin/media              - Media library page
  *   GET    /admin/media/json         - JSON listing for picker modal
+ *   GET    /admin/media/capabilities - Processor capabilities
  *   POST   /admin/media/upload/image - Image upload
  *   POST   /admin/media/upload/video - Video upload
  *   POST   /admin/media/embed        - Store embed URL
+ *   GET    /admin/media/@id/editor   - Image editor page
+ *   POST   /admin/media/@id/edit     - Apply edit operation
+ *   POST   /admin/media/@id/revert   - Revert to pristine original
  *   POST   /admin/media/@id/poster   - Upload poster for video
  *   POST   /admin/media/@id/update   - Update metadata
  *   POST   /admin/media/@id/delete   - Delete media + files
@@ -71,3 +75,25 @@ $router->post('/media/@id/delete', function (string $id) use ($app, $configPrepe
     (new MediaController($app, $configPrepend))->destroy($id);
 })->addMiddleware(new SessionAuthMiddleware($app))
   ->addMiddleware(new CsrfMiddleware($app));
+
+// Image editor page
+$router->get('/media/@id/editor', function (string $id) use ($app, $configPrepend) {
+    (new MediaController($app, $configPrepend))->editor($id);
+})->addMiddleware(new SessionAuthMiddleware($app));
+
+// Apply edit operation
+$router->post('/media/@id/edit', function (string $id) use ($app, $configPrepend) {
+    (new MediaController($app, $configPrepend))->applyEdit($id);
+})->addMiddleware(new SessionAuthMiddleware($app))
+  ->addMiddleware(new CsrfMiddleware($app));
+
+// Revert to original
+$router->post('/media/@id/revert', function (string $id) use ($app, $configPrepend) {
+    (new MediaController($app, $configPrepend))->revert($id);
+})->addMiddleware(new SessionAuthMiddleware($app))
+  ->addMiddleware(new CsrfMiddleware($app));
+
+// Processor capabilities
+$router->get('/media/capabilities', function () use ($app, $configPrepend) {
+    (new MediaController($app, $configPrepend))->capabilities();
+})->addMiddleware(new SessionAuthMiddleware($app));

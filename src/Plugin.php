@@ -32,20 +32,81 @@ class Plugin implements PluginInterface
         $app->map('media', function () use ($config) {
             static $instance = null;
             if ($instance === null) {
+                $publicPath = defined('FC_PATH')
+                    ? FC_PATH
+                    : rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+
                 $instance = new MediaService(
                     Flight::db(),
                     $config,
-                    $_SERVER['DOCUMENT_ROOT']
+                    $publicPath
                 );
             }
             return $instance;
         });
+
+        // Register Vision tag: {% media_picker 'fieldname' currentValue %}
+        $view = $app->view();
+        if ($view instanceof \Enlivenapp\FlightSchool\PluginView) {
+            $engine = $view->vision();
+            if ($engine !== null) {
+                $engine->tags()->register('media_picker', function (string $inputName, ?string $currentValue = '') use ($app) {
+                    $currentValue = $currentValue ?? '';
+                    return $app->media()->publicPicker($inputName, $currentValue);
+                });
+            }
+        }
 
         $app->adext('menu', 'content', 'pubvana.media', [
             'label'    => 'Media',
             'icon'     => 'ti-photo',
             'url'      => '/media',
             'priority' => 20,
+        ]);
+
+        $app->adext('page', 'dashboard.cards', 'pubvana.media', [
+            'label'    => 'Media',
+            'priority' => 40,
+            'callable' => function (array $context) use ($app): array {
+                $total = $app->media()->countAll();
+
+                return [[
+                    'id'          => 'media-items',
+                    'label'       => 'Media Items',
+                    'value'       => $total,
+                    'icon'        => 'ti-photo',
+                    'tone'        => 'secondary',
+                    'href'        => '/media',
+                    'description' => 'Assets available in the media library.',
+                ]];
+            },
+        ]);
+
+        $app->adext('page', 'dashboard.sections', 'pubvana.media', [
+            'label'    => 'Media',
+            'priority' => 50,
+            'callable' => function (array $context) use ($app): array {
+                $items = [];
+                foreach ($app->media()->recent(5) as $media) {
+                    $type = ucfirst((string) $media->type);
+                    $items[] = [
+                        'label'    => $media->title ?: $media->filename,
+                        'meta'     => $type . ' · ' . date('M j, Y g:ia', strtotime((string) $media->created_at)),
+                        'href'     => '/media',
+                        'emphasis' => 'secondary',
+                    ];
+                }
+
+                return [[
+                    'id'          => 'recent-media',
+                    'title'       => 'Recent Uploads',
+                    'type'        => 'list',
+                    'icon'        => 'ti-photo-up',
+                    'href'        => '/media',
+                    'empty_state' => 'The media library is still empty.',
+                    'items'       => $items,
+                ]];
+            },
         ]);
     }
 }

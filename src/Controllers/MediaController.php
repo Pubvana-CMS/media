@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pubvana\Media\Controllers;
 
+use Enlivenapp\FlightSchool\Exception\ValidationException;
 use Pubvana\Admin\Controllers\AdminController;
 use Pubvana\Media\Services\MediaService;
 
@@ -103,7 +104,7 @@ class MediaController extends AdminController
             $user  = $this->app->auth()->user();
             $media = $this->service()->uploadImage($file, (int) $user->id);
             $this->app->json($this->mediaToArray($media), 201);
-        } catch (\RuntimeException $e) {
+        } catch (ValidationException $e) {
             $this->app->json(['error' => $e->getMessage()], 422);
         }
     }
@@ -127,7 +128,7 @@ class MediaController extends AdminController
             $user  = $this->app->auth()->user();
             $media = $this->service()->uploadVideo($file, (int) $user->id);
             $this->app->json($this->mediaToArray($media), 201);
-        } catch (\RuntimeException $e) {
+        } catch (ValidationException $e) {
             $this->app->json(['error' => $e->getMessage()], 422);
         }
     }
@@ -176,7 +177,7 @@ class MediaController extends AdminController
         try {
             $media = $this->service()->uploadPoster($media, $file);
             $this->app->json($this->mediaToArray($media));
-        } catch (\RuntimeException $e) {
+        } catch (ValidationException $e) {
             $this->app->json(['error' => $e->getMessage()], 422);
         }
     }
@@ -217,6 +218,102 @@ class MediaController extends AdminController
     }
 
     /**
+     * Image editor page.
+     *
+     * @param string $id Media record ID from the URL segment
+     */
+    public function editor(string $id): void
+    {
+        $media = $this->service()->find((int) $id);
+
+        if ($media === null || $media->type !== 'image') {
+            $this->app->redirect('/admin/media');
+            return;
+        }
+
+        $info         = $this->service()->getImageInfo((int) $id);
+        $capabilities = $this->service()->getCapabilities();
+        $exifData     = $this->service()->getExifData((int) $id);
+
+        $this->render('media/editor', [
+            'pageTitle'    => 'Edit — ' . ($media->title ?: $media->filename),
+            'media'        => $media,
+            'info'         => $info,
+            'capabilities' => $capabilities,
+            'exifData'     => $exifData,
+        ]);
+    }
+
+    /**
+     * Apply an edit operation to an image's working copy.
+     *
+     * Expects POST with `operation` and `params` (JSON string) fields.
+     *
+     * @param string $id Media record ID from the URL segment
+     */
+    public function applyEdit(string $id): void
+    {
+        $data      = $this->app->request()->data;
+        $operation = trim($data->operation ?? '');
+        $params    = json_decode($data->params ?? '{}', true) ?: [];
+
+        $caps = $this->service()->getCapabilities();
+        if (!in_array($operation, $caps, true)) {
+            $this->app->json(['error' => 'Unsupported operation.'], 400);
+            return;
+        }
+
+        try {
+            $media = $this->service()->applyEdit((int) $id, $operation, $params);
+        } catch (ValidationException $e) {
+            $this->app->json(['error' => $e->getMessage()], 422);
+            return;
+        }
+
+        if ($media === null) {
+            $this->app->json(['error' => 'Image not found.'], 404);
+            return;
+        }
+
+        $info   = $this->service()->getImageInfo((int) $id);
+        $result = $this->mediaToArray($media);
+        $result['info'] = $info;
+        $result['exif'] = $this->service()->getExifData((int) $id);
+
+        $this->app->json($result);
+    }
+
+    /**
+     * Revert an image to its pristine original.
+     *
+     * @param string $id Media record ID from the URL segment
+     */
+    public function revert(string $id): void
+    {
+        $media = $this->service()->revert((int) $id);
+
+        if ($media === null) {
+            $this->app->json(['error' => 'Image not found or no original available.'], 404);
+            return;
+        }
+
+        $info   = $this->service()->getImageInfo((int) $id);
+        $result = $this->mediaToArray($media);
+        $result['info'] = $info;
+        $result['exif'] = $this->service()->getExifData((int) $id);
+
+        $this->app->json($result);
+    }
+
+    /**
+     * Return processor capabilities as JSON.
+     */
+    public function capabilities(): void
+    {
+        $this->app->json(['capabilities' => $this->service()->getCapabilities()]);
+    }
+
+    /**
      * Normalize a Media entity into a plain array for JSON responses.
      *
      * Includes computed URL fields (thumb_url, medium_url) derived from
@@ -250,6 +347,8 @@ class MediaController extends AdminController
             $name = pathinfo($media->path, PATHINFO_FILENAME);
 
             $data['url']        = '/' . $media->path;
+            $data['thumb_path'] = $dir . '/thumbs/' . $name . '.webp';
+            $data['medium_path'] = $dir . '/medium/' . $name . '.webp';
             $data['thumb_url']  = '/' . $dir . '/thumbs/' . $name . '.webp';
             $data['medium_url'] = '/' . $dir . '/medium/' . $name . '.webp';
         } elseif ($media->path) {

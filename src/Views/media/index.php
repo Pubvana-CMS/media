@@ -160,7 +160,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function handleFiles(files) {
-        Array.from(files).forEach(file => {
+        const fileArray = Array.from(files);
+        let completed = 0;
+        let lastData = null;
+
+        fileArray.forEach(file => {
             const isVideo = file.type.startsWith('video/');
             const endpoint = isVideo ? '/admin/media/upload/video' : '/admin/media/upload/image';
 
@@ -175,7 +179,17 @@ document.addEventListener('DOMContentLoaded', function () {
                         alert(data.error);
                         return;
                     }
-                    location.reload();
+                    completed++;
+                    lastData = data;
+
+                    if (completed === fileArray.length) {
+                        // Single image upload → open editor
+                        if (fileArray.length === 1 && data.type === 'image') {
+                            window.location.href = '/admin/media/' + data.id + '/editor';
+                        } else {
+                            location.reload();
+                        }
+                    }
                 })
                 .catch(() => alert('Upload failed.'));
         });
@@ -224,6 +238,13 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="mb-3">
                 <small class="text-secondary">${media.filename}</small>
             </div>
+            ${media.type === 'image' ? `
+                <div class="mb-3">
+                    <a href="/admin/media/${media.id}/editor" class="btn btn-outline-primary w-100">
+                        <i class="ti ti-photo-edit"></i> Edit Image
+                    </a>
+                </div>
+            ` : ''}
             ${media.type === 'video' ? `
                 <div class="mb-3">
                     <label class="form-label">Upload Poster</label>

@@ -15,7 +15,7 @@
 ?>
 
 <!-- Jodit Media Offcanvas -->
-<div id="<?= $joditId ?>-offcanvas" class="offcanvas offcanvas-end" tabindex="-1" style="width:450px;">
+<div id="<?= $joditId ?>-offcanvas" class="offcanvas offcanvas-end" data-jodit-media="1" tabindex="-1" style="width:450px;">
     <div class="offcanvas-header">
         <h5 class="offcanvas-title">Media Library</h5>
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
@@ -48,6 +48,30 @@ document.addEventListener('DOMContentLoaded', function() {
     var page   = 1;
     var total   = 0;
     var loaded = false;
+
+    if (offcanvasEl && offcanvasEl.parentElement !== document.body) {
+        document.body.appendChild(offcanvasEl);
+    }
+
+    offcanvasEl.addEventListener('show.bs.offcanvas', function() {
+        offcanvasEl.style.zIndex = '1085';
+        setTimeout(function() {
+            var backdrops = document.querySelectorAll('.offcanvas-backdrop');
+            var backdrop = backdrops[backdrops.length - 1];
+            if (backdrop) {
+                backdrop.setAttribute('data-jodit-media-backdrop', '1');
+                backdrop.style.zIndex = '1080';
+            }
+        }, 0);
+    });
+
+    offcanvasEl.addEventListener('hidden.bs.offcanvas', function() {
+        offcanvasEl.style.zIndex = '';
+        var activeModal = document.querySelector('.modal.show');
+        if (activeModal) {
+            activeModal.focus();
+        }
+    });
 
     // ── Upload ─────────────────────────────────────────────
 
@@ -128,13 +152,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     var col = document.createElement('div');
                     col.className = 'col';
-                    col.innerHTML = '<div class="card card-sm jodit-media-item" role="button" style="cursor:pointer;"'
+                    col.innerHTML = '<div class="card card-sm jodit-media-item"'
                         + ' data-type="' + item.type + '"'
                         + ' data-url="' + (item.medium_url || item.url || '') + '"'
+                        + ' data-medium-url="' + (item.medium_url || item.url || '') + '"'
+                        + ' data-thumb-url="' + (item.thumb_url || item.url || '') + '"'
                         + ' data-original="' + (item.url || '') + '"'
                         + ' data-poster="' + (item.poster_url || '') + '"'
                         + ' data-alt="' + (item.alt_text || '') + '">'
                         + thumb + '</div>';
+                    if (item.type === 'image') {
+                        col.innerHTML = '<div class="card card-sm jodit-media-item"'
+                            + ' data-type="' + item.type + '"'
+                            + ' data-url="' + (item.medium_url || item.url || '') + '"'
+                            + ' data-medium-url="' + (item.medium_url || item.url || '') + '"'
+                            + ' data-thumb-url="' + (item.thumb_url || item.url || '') + '"'
+                            + ' data-original="' + (item.url || '') + '"'
+                            + ' data-poster="' + (item.poster_url || '') + '"'
+                            + ' data-alt="' + (item.alt_text || '') + '">'
+                            + thumb
+                            + '<div class="card-body p-2">'
+                            + '<div class="btn-group btn-group-sm w-100" role="group">'
+                            + '<button type="button" class="btn btn-outline-secondary jodit-size-choice" data-size="small">S</button>'
+                            + '<button type="button" class="btn btn-outline-secondary jodit-size-choice" data-size="medium">M</button>'
+                            + '<button type="button" class="btn btn-outline-secondary jodit-size-choice" data-size="large">L</button>'
+                            + '</div></div></div>';
+                    }
                     grid.appendChild(col);
                 });
 
@@ -195,11 +238,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // ── Insert from offcanvas ──────────────────────────────
 
     grid.addEventListener('click', function(e) {
+        var choice = e.target.closest('.jodit-size-choice');
         var item = e.target.closest('.jodit-media-item');
         if (!item) return;
 
         var type     = item.dataset.type;
-        var url      = item.dataset.url;
+        var size     = choice ? choice.dataset.size : 'large';
+        var url      = size === 'small'
+            ? (item.dataset.thumbUrl || item.dataset.url)
+            : (size === 'large' ? item.dataset.original : (item.dataset.mediumUrl || item.dataset.url));
         var original = item.dataset.original;
         var alt      = item.dataset.alt;
         var poster   = item.dataset.poster;

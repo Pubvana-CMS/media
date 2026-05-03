@@ -1,10 +1,18 @@
-[![Version](http://poser.pugx.org/pubvana/media/version)](https://packagist.org/packages/pubvana/media)
-[![License](http://poser.pugx.org/pubvana/media/license)](https://packagist.org/packages/pubvana/media)
-[![PHP Version Require](http://poser.pugx.org/pubvana/media/require/php)](https://packagist.org/packages/pubvana/media)
+[![Stable? Not Quite Yet](https://img.shields.io/badge/stable%3F-not%20quite%20yet-blue?style=for-the-badge)](https://packagist.org/packages/pubvana/media)
+[![License](https://img.shields.io/packagist/l/pubvana/media?style=for-the-badge)](https://packagist.org/packages/pubvana/media)
+[![PHP Version](https://img.shields.io/packagist/php-v/pubvana/media?style=for-the-badge)](https://packagist.org/packages/pubvana/media)
+[![Monthly Downloads](https://img.shields.io/packagist/dm/pubvana/media?style=for-the-badge)](https://packagist.org/packages/pubvana/media)
+[![Total Downloads](https://img.shields.io/packagist/dt/pubvana/media?style=for-the-badge)](https://packagist.org/packages/pubvana/media)
+[![GitHub Issues](https://img.shields.io/github/issues/Pubvana-CMS/media?style=for-the-badge)](https://github.com/Pubvana-CMS/media/issues)
+[![Contributors](https://img.shields.io/github/contributors/Pubvana-CMS/media?style=for-the-badge)](https://github.com/Pubvana-CMS/media/graphs/contributors)
+[![Latest Release](https://img.shields.io/github/v/release/Pubvana-CMS/media?style=for-the-badge)](https://github.com/Pubvana-CMS/media/releases)
+[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-blue?style=for-the-badge)](https://github.com/Pubvana-CMS/media/pulls)
 
 # Pubvana Media
 
-Media management module for [Pubvana](https://pubvanacms.com) — images, video, and embeds. Built as a [Flight School](https://github.com/enlivenapp/flight-school) plugin with the headless service pattern.
+**I noticed folks downloading some of these packages. I'm super grateful, Thank You!  I would like to let folks know until this notice disappears I'm doing a lot of breaking changes without worrying about them.  Once versions are up around 0.5.x things should settle down.**
+
+Media management module for [Pubvana](https://pubvanacms.com) — images, video, and embeds. Built as a [Flight School](https://github.com/enlivenapp/flight-school) plugin.
 
 ## Features
 
@@ -13,7 +21,7 @@ Media management module for [Pubvana](https://pubvanacms.com) — images, video,
 - Embed storage (YouTube, Vimeo)
 - Imagick or GD — auto-detects the best available processor
 - Reusable media picker widget for any form
-- Headless service on `$app->media()` — usable from any controller or plugin
+- Media service on `$app->media()` — usable from any controller or plugin
 - Registers an `adext` menu contribution when admin is present
 
 ## Requirements
@@ -28,7 +36,7 @@ Media management module for [Pubvana](https://pubvanacms.com) — images, video,
 
 ## Recommends
 
-- `pubvana/admin` (The head for Pubvana headless)
+- `pubvana/admin` (Admin UI for the media library and picker workflows)
 
 ## Installation
 
@@ -49,6 +57,12 @@ Enable in `app/config/config.php`:
 
 Migrations package creates the `media` table automatically on first load.
 
+## Flight School config
+
+This package uses Flight School's return-array config format. `src/Config/Config.php` returns the package defaults as an array, and Flight School stores that array under `pubvana.media` on `$app`.
+
+That returned array currently includes `'routePrepend' => 'media'`. The package does not currently define public application routes in `src/Config/Routes.php`, but admin/media-related routes still use the normal Flight School loading flow.
+
 ## Configuration
 
 Defaults from `Config.php` — override in your plugin config block:
@@ -61,8 +75,8 @@ Defaults from `Config.php` — override in your plugin config block:
 | `allowed_image_ext` | `['jpg','jpeg','png','gif','webp']` | |
 | `allowed_video_ext` | `['mp4','webm','mov']` | |
 | `webp_quality` | `85` | WebP output quality (0-100) |
-| `thumb_width` | `300` | Thumbnail crop width |
-| `thumb_height` | `200` | Thumbnail crop height |
+| `thumb_width` | `300` | Small derivative width (proportional resize) |
+| `thumb_height` | `200` | Reserved for poster sizing / legacy config compatibility |
 | `medium_width` | `768` | Medium resize width (proportional) |
 
 ## Usage
@@ -107,7 +121,7 @@ Uploads go to `public/{upload_path}/YYYY/MM/`:
 uploads/2026/04/
     abc123.jpg          # original
     medium/abc123.webp  # 768px wide, proportional
-    thumbs/abc123.webp  # 300x200, cropped
+    thumbs/abc123.webp  # 300px wide, proportional
 ```
 
 ## License

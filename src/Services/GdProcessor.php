@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Pubvana\Media\Services;
 
+use Enlivenapp\FlightSchool\Exception\ValidationException;
+
 /**
  * ImageProcessorInterface implementation backed by the GD extension.
  *
@@ -14,25 +16,27 @@ namespace Pubvana\Media\Services;
  */
 class GdProcessor implements ImageProcessorInterface
 {
-    /** @var \GdImage */
-    private $image;
-
+    private ?\GdImage $image = null;
     private string $mime;
+    private string $loadedPath;
 
     public function load(string $path): static
     {
-        $info       = getimagesize($path);
-        $this->mime = $info['mime'];
+        $info = getimagesize($path);
+        if ($info === false) {
+            throw new ValidationException("Unable to read image: {$path}");
+        }
+        $this->mime       = $info['mime'];
+        $this->loadedPath = $path;
 
         $this->image = match ($this->mime) {
             'image/jpeg' => imagecreatefromjpeg($path),
             'image/png'  => imagecreatefrompng($path),
             'image/gif'  => imagecreatefromgif($path),
             'image/webp' => imagecreatefromwebp($path),
-            default      => throw new \RuntimeException("Unsupported image type: {$this->mime}"),
+            default      => throw new ValidationException("Unsupported image type: {$this->mime}"),
         };
 
-        // Preserve transparency
         imagealphablending($this->image, true);
         imagesavealpha($this->image, true);
 
@@ -48,7 +52,7 @@ class GdProcessor implements ImageProcessorInterface
             return $this;
         }
 
-        $height = (int) round($origHeight * ($width / $origWidth));
+        $height  = (int) round($origHeight * ($width / $origWidth));
         $resized = imagecreatetruecolor($width, $height);
 
         imagealphablending($resized, false);
@@ -61,37 +65,124 @@ class GdProcessor implements ImageProcessorInterface
         return $this;
     }
 
-    public function crop(int $width, int $height): static
+    public function crop(int $x, int $y, int $width, int $height): static
     {
-        $origWidth  = imagesx($this->image);
-        $origHeight = imagesy($this->image);
-
-        // Scale to cover the target dimensions
-        $scaleW = $width / $origWidth;
-        $scaleH = $height / $origHeight;
-        $scale  = max($scaleW, $scaleH);
-
-        $scaledWidth  = (int) round($origWidth * $scale);
-        $scaledHeight = (int) round($origHeight * $scale);
-
-        $scaled = imagecreatetruecolor($scaledWidth, $scaledHeight);
-        imagealphablending($scaled, false);
-        imagesavealpha($scaled, true);
-        imagecopyresampled($scaled, $this->image, 0, 0, 0, 0, $scaledWidth, $scaledHeight, $origWidth, $origHeight);
-
-        // Center crop
-        $x = (int) round(($scaledWidth - $width) / 2);
-        $y = (int) round(($scaledHeight - $height) / 2);
-
         $cropped = imagecreatetruecolor($width, $height);
         imagealphablending($cropped, false);
         imagesavealpha($cropped, true);
-        imagecopy($cropped, $scaled, 0, 0, $x, $y, $width, $height);
+        imagecopy($cropped, $this->image, 0, 0, $x, $y, $width, $height);
 
         imagedestroy($this->image);
-        imagedestroy($scaled);
         $this->image = $cropped;
 
+        return $this;
+    }
+
+    public function rotate(int $degrees): static
+    {
+        // GD rotates counter-clockwise; negate for clockwise
+        $rotated = imagerotate($this->image, -$degrees, 0);
+        imagealphablending($rotated, true);
+        imagesavealpha($rotated, true);
+
+        imagedestroy($this->image);
+        $this->image = $rotated;
+
+        return $this;
+    }
+
+    public function flip(string $direction): static
+    {
+        $mode = ($direction === 'horizontal') ? IMG_FLIP_VERTICAL : IMG_FLIP_HORIZONTAL;
+        imageflip($this->image, $mode);
+        return $this;
+    }
+
+    public function sharpen(): static
+    {
+        $matrix = [
+            [0, -1, 0],
+            [-1, 5, -1],
+            [0, -1, 0],
+        ];
+        imageconvolution($this->image, $matrix, 1, 0);
+        return $this;
+    }
+
+    public function brightness(int $level): static
+    {
+        if ($level === 0) {
+            return $this;
+        }
+        // GD range: -255 to 255
+        $gdLevel = (int) round($level * 2.55);
+        imagefilter($this->image, IMG_FILTER_BRIGHTNESS, $gdLevel);
+        return $this;
+    }
+
+    public function contrast(int $level): static
+    {
+        if ($level === 0) {
+            return $this;
+        }
+        // GD contrast is inverted: negative value = more contrast
+        imagefilter($this->image, IMG_FILTER_CONTRAST, -$level);
+        return $this;
+    }
+
+    public function autoOrient(): static
+    {
+        if (!function_exists('exif_read_data')) {
+            return $this;
+        }
+
+        $exif = @exif_read_data($this->loadedPath);
+        if ($exif === false || !isset($exif['Orientation'])) {
+            return $this;
+        }
+
+        switch ($exif['Orientation']) {
+            case 2:
+                imageflip($this->image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 3:
+                $rotated = imagerotate($this->image, 180, 0);
+                imagedestroy($this->image);
+                $this->image = $rotated;
+                break;
+            case 4:
+                imageflip($this->image, IMG_FLIP_VERTICAL);
+                break;
+            case 5:
+                $rotated = imagerotate($this->image, -90, 0);
+                imagedestroy($this->image);
+                $this->image = $rotated;
+                imageflip($this->image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 6:
+                $rotated = imagerotate($this->image, -90, 0);
+                imagedestroy($this->image);
+                $this->image = $rotated;
+                break;
+            case 7:
+                $rotated = imagerotate($this->image, 90, 0);
+                imagedestroy($this->image);
+                $this->image = $rotated;
+                imageflip($this->image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 8:
+                $rotated = imagerotate($this->image, 90, 0);
+                imagedestroy($this->image);
+                $this->image = $rotated;
+                break;
+        }
+
+        return $this;
+    }
+
+    public function stripExif(): static
+    {
+        // GD does not preserve EXIF — already stripped on load
         return $this;
     }
 
@@ -99,11 +190,31 @@ class GdProcessor implements ImageProcessorInterface
     {
         imagewebp($this->image, $outputPath, $quality);
         imagedestroy($this->image);
+        $this->image = null;
+    }
+
+    public function save(string $outputPath, ?int $quality = null): void
+    {
+        $ext = strtolower(pathinfo($outputPath, PATHINFO_EXTENSION));
+
+        match ($ext) {
+            'jpg', 'jpeg' => imagejpeg($this->image, $outputPath, $quality ?? 92),
+            'png'         => imagepng($this->image, $outputPath, 9),
+            'gif'         => imagegif($this->image, $outputPath),
+            'webp'        => imagewebp($this->image, $outputPath, $quality ?? 85),
+            default       => imagejpeg($this->image, $outputPath, $quality ?? 92),
+        };
+
+        imagedestroy($this->image);
+        $this->image = null;
     }
 
     public function getInfo(string $path): array
     {
         $info = getimagesize($path);
+        if ($info === false) {
+            throw new ValidationException("Unable to read image: {$path}");
+        }
 
         return [
             'width'  => $info[0],
@@ -112,36 +223,68 @@ class GdProcessor implements ImageProcessorInterface
         ];
     }
 
-    public function stripExif(string $path): void
+    public function getExif(string $path): array
     {
-        $info = getimagesize($path);
-        if ($info === false) {
-            return;
+        if (!function_exists('exif_read_data')) {
+            return [];
         }
 
-        $image = match ($info['mime']) {
-            'image/jpeg' => imagecreatefromjpeg($path),
-            'image/png'  => imagecreatefrompng($path),
-            'image/gif'  => imagecreatefromgif($path),
-            'image/webp' => imagecreatefromwebp($path),
-            default      => null,
-        };
-
-        if ($image === null) {
-            return;
+        $mime = mime_content_type($path);
+        if (!in_array($mime, ['image/jpeg', 'image/tiff'], true)) {
+            return [];
         }
 
-        imagealphablending($image, true);
-        imagesavealpha($image, true);
+        $exif = @exif_read_data($path, null, true);
+        if ($exif === false) {
+            return [];
+        }
 
-        match ($info['mime']) {
-            'image/jpeg' => imagejpeg($image, $path, 95),
-            'image/png'  => imagepng($image, $path),
-            'image/gif'  => imagegif($image, $path),
-            'image/webp' => imagewebp($image, $path, 95),
-            default      => null,
-        };
+        $skipSections = ['FILE', 'THUMBNAIL'];
+        $skipKeys     = ['MakerNote', 'ComponentsConfiguration', 'FileSource', 'SceneType', 'PrintIM',
+                         'SectionsFound', 'IsColor', 'ByteOrderMotorola'];
+        $result       = [];
 
-        imagedestroy($image);
+        foreach ($exif as $section => $data) {
+            if (!is_array($data)) {
+                continue;
+            }
+            if (in_array($section, $skipSections, true)) {
+                continue;
+            }
+
+            foreach ($data as $key => $value) {
+                if (in_array($key, $skipKeys, true)) {
+                    continue;
+                }
+                if (str_starts_with($key, 'UndefinedTag:')) {
+                    continue;
+                }
+
+                if (is_array($value)) {
+                    $value = implode(', ', array_map('strval', $value));
+                }
+                $value = (string) $value;
+
+                if (strlen($value) > 500 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $value)) {
+                    continue;
+                }
+
+                $result[$key] = $value;
+            }
+        }
+
+        ksort($result);
+        return $result;
+    }
+
+    public function capabilities(): array
+    {
+        $caps = ['crop', 'rotate', 'flip', 'resize', 'sharpen', 'brightness', 'contrast', 'strip_exif'];
+
+        if (function_exists('exif_read_data')) {
+            $caps[] = 'auto_orient';
+        }
+
+        return $caps;
     }
 }

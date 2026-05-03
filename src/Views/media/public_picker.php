@@ -1,10 +1,9 @@
 <?php
 /**
- * Reusable media image picker — rendered by MediaService::picker().
+ * Reusable media image picker for public-facing pages.
  *
- * Displays a clickable thumbnail preview. Clicking opens an offcanvas
- * with the media library grid (images only). Selecting an image updates
- * the hidden input and preview, then closes the offcanvas.
+ * Same as picker.php but uses Bootstrap 5 Icons and bootstrap.Offcanvas
+ * instead of Tabler equivalents.
  *
  * @var string $inputName    Form input name (e.g. 'avatar')
  * @var string $currentValue Current image path (relative, e.g. 'uploads/2026/04/abc.png')
@@ -23,14 +22,14 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
         <?php else: ?>
             <div class="d-flex align-items-center justify-content-center text-secondary"
                  style="width:80px; height:80px;">
-                <i class="ti ti-photo-plus" style="font-size:2rem;"></i>
+                <i class="bi bi-image" style="font-size:2rem;"></i>
             </div>
         <?php endif; ?>
     </div>
     <input type="hidden" name="<?= htmlspecialchars($inputName) ?>" value="<?= htmlspecialchars($currentValue) ?>">
     <?php if ($hasImage): ?>
-        <button type="button" class="btn btn-ghost-danger btn-sm mt-1 media-picker-clear">
-            <i class="ti ti-x"></i> Remove
+        <button type="button" class="btn btn-outline-danger btn-sm mt-1 media-picker-clear">
+            <i class="bi bi-x-lg"></i> Remove
         </button>
     <?php endif; ?>
 </div>
@@ -42,8 +41,8 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
     </div>
     <div class="offcanvas-body">
-        <div id="<?= $pickerId ?>-upload-zone" class="border border-dashed rounded p-3 text-center mb-3" style="cursor:pointer;">
-            <i class="ti ti-cloud-upload" style="font-size:1.5rem;"></i>
+        <div id="<?= $pickerId ?>-upload-zone" class="border border-2 border-dashed rounded p-3 text-center mb-3" style="cursor:pointer;">
+            <i class="bi bi-cloud-arrow-up" style="font-size:1.5rem;"></i>
             <p class="mb-0 mt-1 small">Drop image or click to upload</p>
             <input type="file" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp">
         </div>
@@ -185,14 +184,14 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
         if (!picker.querySelector('.media-picker-clear')) {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'btn btn-ghost-danger btn-sm mt-1 media-picker-clear';
-            btn.innerHTML = '<i class="ti ti-x"></i> Remove';
+            btn.className = 'btn btn-outline-danger btn-sm mt-1 media-picker-clear';
+            btn.innerHTML = '<i class="bi bi-x-lg"></i> Remove';
             btn.addEventListener('click', clearImage);
             preview.insertAdjacentElement('afterend', btn);
         }
 
         // Close offcanvas
-        tabler.Offcanvas.getInstance(offcanvasEl)?.hide();
+        bootstrap.Offcanvas.getInstance(offcanvasEl)?.hide();
     });
 
     // Clear / remove
@@ -200,7 +199,7 @@ $previewSrc = $hasImage ? '/' . ltrim($currentValue, '/') : '';
         hiddenInput.value = '';
         preview.innerHTML = `<div class="d-flex align-items-center justify-content-center text-secondary"
             style="width:80px; height:80px;">
-            <i class="ti ti-photo-plus" style="font-size:2rem;"></i>
+            <i class="bi bi-image" style="font-size:2rem;"></i>
         </div>`;
         const btn = picker.querySelector('.media-picker-clear');
         if (btn) btn.remove();

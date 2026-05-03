@@ -1,0 +1,10 @@
+{
+    "display_name": "Media",
+    "description": "Media management module for Pubvana — images, video, embeds",
+    "category": "content",
+    "provides": {
+        "content_types": [],
+        "content_type_supports": [],
+        "blocks": []
+    }
+}

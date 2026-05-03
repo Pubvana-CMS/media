@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Pubvana\Media\Services;
 
+use Enlivenapp\FlightSchool\Exception\ConfigurationException;
+use Enlivenapp\FlightSchool\Exception\ValidationException;
 use Pubvana\Media\Models\Media;
 
 /**
@@ -44,13 +46,16 @@ class MediaService
             return new GdProcessor();
         }
 
-        throw new \RuntimeException('No image processing extension available. Install Imagick or GD.');
+        throw new ConfigurationException('No image processing extension available. Install Imagick or GD.');
     }
+
+    // ── Upload ─────────────────────────────────────────────────
 
     /**
      * Upload an image file.
      *
-     * Stores the original, generates medium and thumbnail WebP derivatives.
+     * Stores a pristine original (never modified), creates a working copy,
+     * and generates medium and thumbnail derivatives. Nothing else.
      *
      * @param array $file       $_FILES entry (name, tmp_name, size, type, error)
      * @param int   $uploadedBy User ID
@@ -60,42 +65,31 @@ class MediaService
     {
         $this->validateUpload($file, 'image');
 
-        $ext      = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $hex      = bin2hex(random_bytes(16));
-        $relDir   = $this->config['upload_path'] . '/' . date('Y/m');
-        $absDir   = $this->publicPath . '/' . $relDir;
+        $ext    = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $hex    = bin2hex(random_bytes(16));
+        $relDir = $this->config['upload_path'] . '/' . date('Y/m');
+        $absDir = $this->publicPath . '/' . $relDir;
 
         $this->ensureDirectory($absDir);
+        $this->ensureDirectory($absDir . '/originals');
         $this->ensureDirectory($absDir . '/medium');
         $this->ensureDirectory($absDir . '/thumbs');
 
-        // Store original and strip EXIF metadata
-        $originalName = $hex . '.' . $ext;
-        $originalRel  = $relDir . '/' . $originalName;
-        move_uploaded_file($file['tmp_name'], $absDir . '/' . $originalName);
-        $this->processor->stripExif($absDir . '/' . $originalName);
+        $filename = $hex . '.' . $ext;
 
-        // Generate medium (768px wide, proportional) as WebP
-        $mediumName = $hex . '.webp';
-        $this->processor
-            ->load($absDir . '/' . $originalName)
-            ->resize($this->config['medium_width'] ?? 768)
-            ->toWebp($absDir . '/medium/' . $mediumName, $this->config['webp_quality'] ?? 85);
+        // Pristine original — never touched again
+        move_uploaded_file($file['tmp_name'], $absDir . '/originals/' . $filename);
 
-        // Generate thumbnail (300x200, cropped) as WebP
-        $thumbName = $hex . '.webp';
-        $this->processor
-            ->load($absDir . '/' . $originalName)
-            ->crop(
-                $this->config['thumb_width'] ?? 300,
-                $this->config['thumb_height'] ?? 200
-            )
-            ->toWebp($absDir . '/thumbs/' . $thumbName, $this->config['webp_quality'] ?? 85);
+        // Working copy
+        copy($absDir . '/originals/' . $filename, $absDir . '/' . $filename);
+
+        // Derivatives from working copy
+        $this->generateDerivatives($absDir, $filename);
 
         return $this->model->createRecord([
             'type'        => 'image',
             'filename'    => $file['name'],
-            'path'        => $originalRel,
+            'path'        => $relDir . '/' . $filename,
             'mime_type'   => $file['type'],
             'size'        => $file['size'],
             'uploaded_by' => $uploadedBy,
@@ -197,10 +191,7 @@ class MediaService
         $posterName = $hex . '_poster.webp';
         $this->processor
             ->load($file['tmp_name'])
-            ->crop(
-                $this->config['thumb_width'] ?? 300,
-                $this->config['thumb_height'] ?? 200
-            )
+            ->resize($this->config['thumb_width'] ?? 300)
             ->toWebp($absDir . '/thumbs/' . $posterName, $this->config['webp_quality'] ?? 85);
 
         $media->updateMeta([
@@ -209,6 +200,175 @@ class MediaService
 
         return $media;
     }
+
+    // ── Editing ────────────────────────────────────────────────
+
+    /**
+     * Apply an editing operation to an image's working copy.
+     *
+     * Edits modify the working copy and regenerate derivatives.
+     * The pristine original is never touched.
+     *
+     * @param int    $id        Media record ID
+     * @param string $operation Operation name (crop, rotate, flip, etc.)
+     * @param array  $params    Operation parameters
+     * @return Media|null Updated record, or null if not found
+     */
+    public function applyEdit(int $id, string $operation, array $params = []): ?Media
+    {
+        $media = $this->model->findById($id);
+        if ($media === null || $media->type !== 'image') {
+            return null;
+        }
+
+        $workingPath = $this->publicPath . '/' . $media->path;
+        if (!file_exists($workingPath)) {
+            return null;
+        }
+
+        $this->processor->load($workingPath);
+
+        match ($operation) {
+            'crop'        => $this->processor->crop(
+                (int) ($params['x'] ?? 0),
+                (int) ($params['y'] ?? 0),
+                (int) ($params['width'] ?? 0),
+                (int) ($params['height'] ?? 0)
+            ),
+            'rotate'      => $this->processor->rotate((int) ($params['degrees'] ?? 90)),
+            'flip'        => $this->processor->flip($params['direction'] ?? 'horizontal'),
+            'sharpen'     => $this->processor->sharpen(),
+            'brightness'  => $this->processor->brightness((int) ($params['level'] ?? 0)),
+            'contrast'    => $this->processor->contrast((int) ($params['level'] ?? 0)),
+            'auto_orient' => $this->processor->autoOrient(),
+            'strip_exif'  => $this->processor->stripExif(),
+            default       => throw new ValidationException("Unknown operation: {$operation}"),
+        };
+
+        $this->processor->save($workingPath);
+
+        // Regenerate derivatives from edited working copy
+        $absDir   = dirname($workingPath);
+        $filename = basename($media->path);
+        $this->generateDerivatives($absDir, $filename);
+
+        $media->size       = filesize($workingPath);
+        $media->updated_at = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $media->save();
+
+        return $media;
+    }
+
+    /**
+     * Revert an image to its pristine original.
+     *
+     * Copies the pristine original back to the working copy and
+     * regenerates derivatives.
+     */
+    public function revert(int $id): ?Media
+    {
+        $media = $this->model->findById($id);
+        if ($media === null || $media->type !== 'image') {
+            return null;
+        }
+
+        $workingPath  = $this->publicPath . '/' . $media->path;
+        $originalPath = dirname($workingPath) . '/originals/' . basename($media->path);
+
+        if (!file_exists($originalPath)) {
+            return null;
+        }
+
+        copy($originalPath, $workingPath);
+
+        $absDir   = dirname($workingPath);
+        $filename = basename($media->path);
+        $this->generateDerivatives($absDir, $filename);
+
+        $media->size       = filesize($workingPath);
+        $media->updated_at = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $media->save();
+
+        return $media;
+    }
+
+    /**
+     * Get image dimensions and format info for a media record.
+     *
+     * @return array{width: int, height: int, mime: string}|null
+     */
+    public function getImageInfo(int $id): ?array
+    {
+        $media = $this->model->findById($id);
+        if ($media === null || $media->type !== 'image') {
+            return null;
+        }
+
+        $workingPath = $this->publicPath . '/' . $media->path;
+        if (!file_exists($workingPath)) {
+            return null;
+        }
+
+        return $this->processor->getInfo($workingPath);
+    }
+
+    /**
+     * Get EXIF/metadata for a media record's working copy.
+     *
+     * @return array<string, string>
+     */
+    public function getExifData(int $id): array
+    {
+        $media = $this->model->findById($id);
+        if ($media === null || $media->type !== 'image') {
+            return [];
+        }
+
+        $workingPath = $this->publicPath . '/' . $media->path;
+        if (!file_exists($workingPath)) {
+            return [];
+        }
+
+        return $this->processor->getExif($workingPath);
+    }
+
+    /**
+     * Get the list of operations the active processor supports.
+     *
+     * @return string[]
+     */
+    public function getCapabilities(): array
+    {
+        return $this->processor->capabilities();
+    }
+
+    // ── Derivatives ────────────────────────────────────────────
+
+    /**
+     * Generate medium and thumbnail WebP derivatives from the working copy.
+     */
+    private function generateDerivatives(string $absDir, string $filename): void
+    {
+        $hex         = pathinfo($filename, PATHINFO_FILENAME);
+        $workingPath = $absDir . '/' . $filename;
+
+        $this->ensureDirectory($absDir . '/medium');
+        $this->ensureDirectory($absDir . '/thumbs');
+
+        // Medium — proportional resize
+        $this->processor
+            ->load($workingPath)
+            ->resize($this->config['medium_width'] ?? 768)
+            ->toWebp($absDir . '/medium/' . $hex . '.webp', $this->config['webp_quality'] ?? 85);
+
+        // Thumb — proportional resize
+        $this->processor
+            ->load($workingPath)
+            ->resize($this->config['thumb_width'] ?? 300)
+            ->toWebp($absDir . '/thumbs/' . $hex . '.webp', $this->config['webp_quality'] ?? 85);
+    }
+
+    // ── Metadata ───────────────────────────────────────────────
 
     /**
      * Update metadata (alt_text, title) on a media record.
@@ -227,6 +387,8 @@ class MediaService
         $media->updateMeta($data);
         return $media;
     }
+
+    // ── Deletion ───────────────────────────────────────────────
 
     /**
      * Delete a media record and all associated files.
@@ -247,9 +409,15 @@ class MediaService
             $dir      = dirname($basePath);
             $hex      = pathinfo($basePath, PATHINFO_FILENAME);
 
-            // Original
+            // Working copy
             if (file_exists($basePath)) {
                 unlink($basePath);
+            }
+
+            // Pristine original
+            $original = $dir . '/originals/' . basename($basePath);
+            if (file_exists($original)) {
+                unlink($original);
             }
 
             // Medium derivative
@@ -277,6 +445,8 @@ class MediaService
         return true;
     }
 
+    // ── Queries ────────────────────────────────────────────────
+
     /**
      * Get a paginated list of media records.
      *
@@ -296,6 +466,24 @@ class MediaService
     }
 
     /**
+     * Count media items, optionally filtered by type.
+     */
+    public function countAll(?string $type = null): int
+    {
+        return $this->model->countAll($type);
+    }
+
+    /**
+     * Get recent media items.
+     *
+     * @return Media[]
+     */
+    public function recent(int $limit = 5, ?string $type = null): array
+    {
+        return $this->model->paginate(1, $limit, $type);
+    }
+
+    /**
      * Find a single media record by ID.
      */
     public function find(int $id): ?Media
@@ -303,8 +491,10 @@ class MediaService
         return $this->model->findById($id);
     }
 
+    // ── Widgets ────────────────────────────────────────────────
+
     /**
-     * Render a media image picker widget.
+     * Render a media image picker widget (admin — uses Tabler icons/JS).
      *
      * Returns HTML for a clickable thumbnail preview with an offcanvas
      * media browser. The selected image path is written to a hidden input.
@@ -320,6 +510,26 @@ class MediaService
 
         ob_start();
         include __DIR__ . '/../Views/media/picker.php';
+        return ob_get_clean();
+    }
+
+    /**
+     * Render a media image picker widget (public — uses Bootstrap Icons/JS).
+     *
+     * Same functionality as picker() but uses Bootstrap 5 icons and
+     * bootstrap.Offcanvas instead of Tabler equivalents.
+     *
+     * @param string $inputName    Form field name (e.g. 'avatar')
+     * @param string $currentValue Current image path (relative to public/)
+     * @return string Rendered HTML
+     */
+    public function publicPicker(string $inputName, string $currentValue = ''): string
+    {
+        static $counter = 0;
+        $pickerId = 'media-picker-' . (++$counter);
+
+        ob_start();
+        include __DIR__ . '/../Views/media/public_picker.php';
         return ob_get_clean();
     }
 
@@ -351,17 +561,19 @@ class MediaService
         return ob_get_clean();
     }
 
+    // ── Internal ───────────────────────────────────────────────
+
     /**
      * Validate an uploaded file against size and extension rules.
      *
      * @param array  $file $_FILES entry
      * @param string $kind 'image' or 'video'
-     * @throws \RuntimeException On validation failure
+     * @throws ValidationException On validation failure
      */
     private function validateUpload(array $file, string $kind): void
     {
         if ($file['error'] !== UPLOAD_ERR_OK) {
-            throw new \RuntimeException('Upload failed with error code: ' . $file['error']);
+            throw new ValidationException('Upload failed with error code: ' . $file['error']);
         }
 
         $ext        = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
@@ -369,12 +581,12 @@ class MediaService
         $maxKey     = ($kind === 'image') ? 'max_image_size' : 'max_video_size';
 
         if (!in_array($ext, $this->config[$allowedKey] ?? [], true)) {
-            throw new \RuntimeException("File type not allowed: .{$ext}");
+            throw new ValidationException("File type not allowed: .{$ext}");
         }
 
         if ($file['size'] > ($this->config[$maxKey] ?? 0)) {
             $maxMb = round(($this->config[$maxKey] ?? 0) / 1024 / 1024);
-            throw new \RuntimeException("File exceeds maximum size of {$maxMb} MB.");
+            throw new ValidationException("File exceeds maximum size of {$maxMb} MB.");
         }
 
         // Verify actual file content matches allowed MIME types
@@ -386,7 +598,7 @@ class MediaService
             : ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'application/mp4'];
 
         if (!in_array($actualMime, $allowedMimes, true)) {
-            throw new \RuntimeException('File content does not match an allowed type.');
+            throw new ValidationException('File content does not match an allowed type.');
         }
     }
 
